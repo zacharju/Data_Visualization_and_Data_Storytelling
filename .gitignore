@@ -1,0 +1,6 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+*.pdf
+!Data_Visualization_und_Data_Storytelling.pdf

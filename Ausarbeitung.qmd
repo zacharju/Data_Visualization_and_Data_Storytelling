@@ -1,0 +1,750 @@
+---
+title: "Seminar Data Science and Decision Science"
+subtitle: "Thema: Data Visualization und Data Storytelling"
+author: "Hanan Loulou und Julian Zacharias"
+format:
+  pdf: 
+    code-block-bg: true
+editor: source
+---
+
+# Erklärung des Codes für den Flavour Pie Chart
+
+## (1.0) Aufbereitung der Daten für den Plot
+
+### (1.1) Einlesen der Daten und Laden der Pakete
+
+Zuerst werden die benötigten Pakete geladen. Außerdem werden die Daten aus der Datei simplified_coffee.csv geladen und in der Variable `coffee` gespeichert.
+
+```{r message = FALSE, warning = FALSE}
+require("tidyverse")
+require("readr")
+require("ggrepel")
+coffee <- read_csv("./Daten/simplified_coffee.csv")
+```
+
+### (1.2) Erstellen der Gruppierungen
+
+Anschließend werden in einem Vektor alle Geschmacksrichtungen des späteren äußeren layer des Pie-Charts in der Variable `flavours` gespeichert:
+
+```{r}
+flavours <- c(
+  "black tea","chamomile", "rose", "jasmine", "blackberry", "raspberry", "blueberry",
+  "strawberry", "raisin", "prune", "coconut", "cherry", "pomegranate", "pineapple",
+  "grape", "apple", "peach", "pear", "grapefruit", "orange", "lemon", "lime", "sour
+  aromatics", "acetic acid", "butyric acid", "isovaleric acid", "citric acid", "malic
+  acid", "winey", "whiskey", "fermented", "overripe","olive oil", "raw", "underripe",
+  "peapod", "fresh", "dark green", "vegetative", "hay-like", "herb-like","beany",
+  "stale", "cardboard", "papery", "woody", "damp", "dusty", "earthy", "animalic", 
+  "meaty brothy","phenolic", "bitter", "salty", "medicinal", "petroleum", "skunky",
+  "rubber","pipe tobacco", "tobacco", "acrid", "ashy", "smoky", "brown","grain", 
+  "malt", "pungent", "pepper", "anise", "nutmeg", "cinnamon", "clove", 
+  "peanuts", "hazelnut", "almond", "chocolate", "dark chocolate", "molasses", 
+  "maple syrup", "caramelized", "honey","vanilla", "vanillin", 
+  "overall sweet", "sweet aromatics"
+)
+```
+
+Außerdem wird der Dataframe `überguppen` erstellt, welcher die Gruppierungen für das outer layer (die Flavour), das mid layer und das inner layer enthält. Wichtig dabei ist, dass alle Gruppen in der richtigen Reihenfolge gespeichert werden. Dies wird später relevant sein, da es dafür sorgt, dass eine Untergruppe im Kreis auch tatsächlich unter ihrer Übergruppe auftaucht:
+
+```{r, width = 60}
+übergruppen <- data.frame(
+  flavour =  flavours,
+  mid_group = c(
+    "black tea", rep("floral", 3), rep("berry", 4), rep("dried_fruit", 2),
+    rep("other_fruit", 8), rep("citrus_fruit", 4), rep("sour", 6),
+    rep("alcohol/fermented", 4), "olive oil", "raw", rep("green", 7), "beany",
+    rep("papery/musty",10), rep("chemical", 6), "pipe tobacco", "tobacco",
+    rep("burnt",4),
+    rep("cereal", 2), "pungent", "pepper", rep("brown spice",4), rep("nutty", 3),
+    rep("cocoa", 2), rep("brown sugar", 4), "vanilla", "vanillin", "overall sweet", 
+    "sweet aromatics" 
+  ),
+  inner_group = c(
+    rep("floral", 4), rep("fruity", 18), rep("sour/fermented", 10), rep("green", 10),
+    rep("other", 16), rep("roasted", 8), rep("spices", 6), rep("nutty/cocoa", 5),
+    rep("sweet", 8)
+  )
+)
+```
+
+### (1.3) Erstellen der Häufigkeitstabellen
+
+Im Folgenden wird eine Häufigkeitstabelle der Flavour inklusive Übergruppierung in der Reviewspalte erstellt. Die Tabelle wird unter `flavour_H` abgespeichert. Dies geschieht in 7 Schritten:
+
+1.  Die Wörter in der Review Spalte werden kleingeschrieben.
+2.  Satzzeichen werden entfernt.
+3.  Die einzelnen Strings für jede Zeile werden zu einem großen String zusammengefügt.
+4.  Aus dem großen String werden alle Wörter entfernt, die keine Geschmackswörter sind. Dies geschieht über einen Abgleich mit der in `flavours` gespeicherten Geschmäcker.
+5.  Die sich ergebende Spalte wird mit `pull()` in einen Vektor umgewandelt.
+6.  `table()` erstellt die Häufigkeitstabelle, welche mit `as.data.frame()` als data frame abgespeichert wird.
+7.  Mit einem left join mit `übergruppen` wird für jeden Flavour dessen mittlere und innere Gruppierung in jeweils einer weiteren Spalte hinzugefügt.
+
+```{r}
+flavours_H = coffee |> 
+  select(review) |> 
+  mutate(review = tolower(review)) |> 
+  mutate(review = str_replace_all(review, "[[:punct:]]", "")) |> 
+  summarise(review = paste(review, collapse = " ")) |> 
+  mutate(flavours = str_extract_all(review, paste(flavours, collapse = "|"))) |> 
+  pull(flavours) |> 
+  table() |> 
+  as.data.frame() |> 
+  left_join(übergruppen, by = join_by(Var1 == flavour))
+```
+
+Anschließend werden zwei weitere Häufigkeitstabellen sowohl für die innere als auch die mittlere Gruppierung erzeugt:
+
+```{r}
+mid_group_H = flavours_H |> 
+  group_by(mid_group) |> 
+  summarise(Freq = sum(Freq))
+
+inner_group_H = flavours_H |> 
+  group_by(inner_group) |> 
+  summarise(Freq = sum(Freq)) 
+```
+
+### (1.4) Sortieren der Häufigkeitstabellen
+
+Die Häufigkeitstabellen sind jetzt nach der alphabetischen Reihenfolge der Worte in der `group` bzw. `Var1` Spalte sortiert. Nun soll die gewünschte in `übergruppen` gespeicherte Reihenfolge erreicht werden. Dies geschieht über eine Umwandlung der jeweiligen Spalte, welche Gruppenname oder Flavour enthält in einen Faktor. Die Reihenfolge wird dabei im levels Argument der Funktion `factor()` angegeben. Anschließend können die Häufigkeitstabellen nach diesem Faktor mithilfe von `arrange()` sortiert werden:
+
+```{r}
+
+flavours_H$Var1 = factor(flavours_H$Var1, levels = flavours)
+flavours_H = flavours_H |> 
+  arrange(Var1)
+
+
+mid_group_H$mid_group = factor(
+  mid_group_H$mid_group, levels = c(unique(übergruppen$mid_group))
+  )
+mid_group_H = mid_group_H |> 
+  arrange(mid_group)
+
+inner_group_H$inner_group = factor(
+  inner_group_H$inner_group, levels = c(unique(übergruppen$inner_group))
+  )
+inner_group_H = inner_group_H |> 
+  arrange(inner_group)
+```
+
+## (2.0) Erstellung der labels
+
+Für die Beschriftungen/label des Plots werden 3 separate Datensätze für den inneren, mittleren und äußeren Kreis erstellt. Die Erstellung jedes der Datensätze ist vom Aufbau für alle drei layer sehr ähnlich. Ich werde daher nur das outer layer erklären:
+
+### (2.1) Outer layer
+
+Die Erstellung erfolgt in 7 Schritten:
+
+1.  Es wird der neue Dataframe `label_data_outer` erstellt. Dieser enthält die Häufigkeitstabelle der Flavour. Die Tabelle ist in der selben Reihenfolge sortiert wie die Flavour Häufigkeitstabelle `flavours_H`.
+
+2.  Der Datensatz wird nun mit `arrange(desc(Var1))` genau in entgegengesetzter Reihenfolge sortiert wie `flavours_H`.
+
+-   Grund: ggplot plottet den Pie Chart normalerweise gegen den Uhrzeigersinn. Beim späteren Plot wird das Argument `direction` innerhalb von `coord_polar()`aber auf `-1` gesetzt, was die Richtung umkehrt. Im Plot wird `geom_text()` verwendet, um die label hinzuzufügen. `geom_text` plottet die label normalerweise im Uhrzeigersinn. Durch `direction = -1` nun aber gegen den Uhrzeigersinn.
+-   Ergebnis und daraus entstehendes Problem: Der Pie Chart wird im Uhrzeigersinn geplottet. Der Text wird gegen den Uhrzeigersinn geplottet. Die label tauchen nicht an ihren zugehörigen Balken auf.
+-   Lösung: Durch das Umkehren der Reihenfolge werden die label zwar immer noch gegen den Uhrzeigersinn geplottet; die Liste der Worte wird nun aber rückwarts durchlaufen (d.h. von vanillin nach black tea), was dazu führt, dass die Worte nun an den richtigen Positionen stehen.
+
+3.  Die Häufigkeiten werden kumuliert und in einer neuen Spalte mit Namen `cum_Freq` abgespeichert.
+
+4.  Es wird ein neuer dataframe `Freq_half_outer` erstellt, welcher für jeden Flavour die Hälfte seiner Häufigkeit enthält.
+
+5.  `Freq_half_outer` wird nun genutzt, um die neue Spalte `Freq_position` zu erstellen. Diese Spalte gibt die Positionen der Wörter auf der y-Achse an. Würde man die Spalte `cum_Freq` zur Positionierung der labels verwenden, würden die labels jeweils am oberen Ende eines Balkens (gelesen gegen den Uhrzeigersinn) auftauchen. Daher wird von jedem Wert in `cum_Freq` jeweils die Hälfte der Balkenbreite (diese Werte sind in Freq_half_outer gespeichert) abgezogen. Somit wird sichergestellt, dass jedes Wort in der Mitte des jeweiligen Balkens positioniert wird.
+
+6.  Der Winkel jedes Wortes wird in der Variable `angle_outer` gespeichert. Ziel ist es, dass jedes Wort in einem 90° Winkel am Kreis ansteht. Begonnen wird mit dem Plotten der Worte "am oberen Ende des Kreises" (bei 12 Uhr). Da alle Worte regulär von `geom_text()` waagerecht geschrieben werden, werden alle Worte um 90° gedreht. Der Kreis wird gegen den Uhrzeigersinn "abgelaufen" und die Worte geplottet. Die Worte werden zusätzlich zu den 90° um einen Prozentsatz multipliziert mit 360° gedreht. Dieser Prozentsatz ergibt sich durch folgende Berechnung: y Positionswert des Wortes/Summe der Häufigkeiten aller Worte des outer layers.
+
+7.  Der Vektor `angle_outer` wird in label_data_outer unter dem Spaltennamen `angle` abgespeichert. Mit einer ifelse-Abfrage werden alle Worte, welche sich auf der rechten Seite des Pie Charts befinden, um 180° gedreht.
+
+```{r}
+label_data_outer = data.frame(
+  Var1 = flavours_H$Var1,
+  Freq = flavours_H$Freq
+)
+
+label_data_outer = label_data_outer |> 
+  arrange(desc(Var1)) 
+
+
+label_data_outer$cum_Freq = cumsum(label_data_outer$Freq)
+Freq_half_outer = flavours_H |>
+  arrange(desc(Var1)) |> 
+  mutate(Freq = Freq/2) |> 
+  select(Freq)
+label_data_outer$Freq_position = label_data_outer$cum_Freq - Freq_half_outer[,1]
+
+
+angle_outer <- -90 + 360 * (label_data_outer$Freq_position/sum(label_data_outer$Freq))
+
+
+label_data_outer = label_data_outer |> 
+  mutate(angle = ifelse(angle_outer > 90, angle_outer-180, angle_outer))
+```
+
+### (2.2) Mid layer
+
+```{r}
+
+label_data_mid = data.frame(
+  mid_group = mid_group_H$mid_group,
+  Freq = mid_group_H$Freq
+)
+
+label_data_mid = label_data_mid |> 
+  arrange(desc(mid_group))
+
+label_data_mid$cum_Freq = cumsum(label_data_mid$Freq)
+
+Freq_half_mid = mid_group_H |> 
+  arrange(desc(mid_group)) |> 
+  mutate(Freq = Freq/2) |> 
+  select(Freq)
+
+label_data_mid$Freq_position = label_data_mid$cum_Freq - Freq_half_mid$Freq 
+
+angle_mid <- -90 + 360 * (label_data_mid$Freq_position/sum(label_data_mid$Freq))
+
+label_data_mid = label_data_mid |> 
+  mutate(angle = ifelse(angle_mid > 90, angle_mid-180, angle_mid))
+
+```
+
+### (2.3) Inner layer
+
+```{r}
+
+label_data_inner = data.frame(
+  inner_group = inner_group_H$inner_group,
+  Freq = inner_group_H$Freq
+)
+
+label_data_inner = label_data_inner |> 
+  arrange(desc(inner_group))
+
+label_data_inner$cum_Freq = cumsum(label_data_inner$Freq)
+
+Freq_half_inner = inner_group_H |> 
+  arrange(desc(inner_group)) |> 
+  mutate(Freq = Freq/2) |> 
+  select(Freq)
+
+label_data_inner$Freq_position = label_data_inner$cum_Freq - Freq_half_inner$Freq 
+
+angle_inner <- -90 + 360 * (label_data_inner$Freq_position/sum(label_data_inner$Freq))
+
+label_data_inner = label_data_inner |> 
+  mutate(angle = ifelse(angle_inner > 90, angle_inner-180, angle_inner))
+```
+
+### (2.4) layer mit sich überschneidenden Worten
+
+Beim Plotten der label des äußeren layers kommt es zu Überschneidungen mancher label, was diese unleserlich macht. Im Konkreten sind dies diese Worte: <br>
+
+vanillin, prune, winey, fermented, tobacco, nutmeg und whiskey
+
+Daher werden diese label entfernt und nicht direkt an den Kreis geschrieben. Stattdessen werden die label weiter außen am Kreis platziert und mit Linien mit dem Kreis verbunden. Dafür wird ein separates Dataset mit den entfernten labeln benötigt, welches hiermit erstellt wird:
+
+```{r, width = 60}
+label_data_removed = label_data_outer |> 
+  filter(
+    grepl("^vanillin$|^prune$|^winey$|^fermented$|^tobacco$|^nutmeg$|^whiskey$", Var1)
+    )
+```
+
+Anschließend werden die Worte, die nicht direkt an den Kreis geschrieben werden sollen, mit `antijoin()` aus dem Datensatz mit den labeln des outer layer entfernt.
+
+```{r message = FALSE, warning = FALSE}
+label_data_outer <- label_data_outer |> 
+  anti_join(label_data_removed)
+```
+
+## (3.0) Der Plot
+
+### (3.1) Erstellen einer Farbskala
+
+Um genau die Farben des SCA Rades abzubilden, muss eine neue Farbskala erstellt werden. In der Variable `scale_color_SCA` wird jedem flavour die selbe Farbe zugewiesen die er auch im SCA Rad hat. Dies geschieht über den Farben Hex Code:
+
+```{r, width = 60}
+scale_color_SCA = c(
+  "floral" = "#d90e6a", "fruity" = "#da1d23", "sour/fermented" = "#ebb40f",
+  "green" = "#187a2f", "other" = "#0aa3b5", "roasted" = "#c94930",
+  "spices" = "#ad203e","nutty/cocoa" = "#a87b64", "sweet" = "#e65832",
+  "chamomile" = "#f89e1c", "rose" = "#ef5a78", "jasmine" = "#f7f1bd",
+  "blackberry" = "#3e0317", "raspberry" = "#e71a60", "blueberry" = "#6569af",
+  "strawberry" = "#f02c38", "raisin" = "#b53b54", "prune" = "#a5446e",
+  "coconut" = "#cf7c36", "cherry" = "#e73451", "pomegranate" = "#e65656",
+  "pineapple" = "#f89a1c", "grape" = "#aeb92c", "apple" = "#4eb947",
+  "peach" = "#f78553", "pear" = "#baa635", "grapefruit" = "#f16356",
+  "orange" = "#e2631e", "lemon" = "#fde404", "lime" = "#7db138",
+  "sour aromatics" = "#9ea718", "acetic acid" = "#94a76f",
+  "butyric acid" = "#cfb24e", "isovaleric acid" = "#8eb646",
+  "malic acid" = "#c1ba07", "winey" = "#8f1c53", "whiskey" = "#b34039",
+  "fermented" = "#ba9232", "overripe" = "#8b6439","olive oil" = "#a2b029",
+  "raw" = "#718933", "underripe" = "#a2bb2a", "peapod" = "#62aa3c",
+  "fresh" = "#03a653", "dark green" = "#04854a", "vegetative" = "#29b44b",
+  "hay-like" = "#a3a830", "herb-like" = "#7ac141","beany" = "#5d9b80",
+  "stale" = "#8b8c8f", "cardboard" = "#beb275", "papery" = "#fefef4",
+  "woody" = "#744e03", "damp" = "#a3a36f", "dusty" = "#c9b583",
+  "earthy" = "#978847", "animalic" = "#9d977f", "meaty brothy" = "#cd7b6a",
+  "phenolic" = "#db646a", "bitter" = "#80a89d", "salty" = "#def2fd",
+  "medicinal" = "#7b9bae", "petroleum" = "#039fb8", "skunky" = "#5e777b", 
+  "rubber" = "#130d0d","pipe tobacco" = "#c8a564", "tobacco" = "#debd7e",
+  "acrid" = "#b9a449", "ashy" = "#899893", "smoky" = "#a1743b",
+  "brown" = "#894711", "grain" = "#b7906f", "malt" = "#eb9d5f",
+  "pungent" = "#794752", "pepper" = "#cc3e42", "anise" = "#c78936",
+  "nutmeg" = "#8c292c", "cinnamon" = "#e6752f", "clove" = "#a16c5a",
+  "peanuts" = "#d4ad12", "hazelnut" = "#9d5433", "almond" = "#c89f83",
+  "chocolate" = "#692a19", "dark chocolate" = "#470604", "molasses"= "#310c0f",
+  "maple syrup" = "#ae341f", "caramelized" = "#d78823", "honey" = "#d95d1e",
+  "vanilla" = "#f99980", "vanillin" = "#f27674", "overall sweet" = "#e75b67",
+  "sweet aromatics" = "#d05460", "black tea" = "#975e6d", "berry" = "#dd4c51",
+  "dried_fruit" = "#c94a44", "other_fruit" = "#f1684b", "citrus_fruit" = "#f7a129", 
+  "sour" = "#e1c315", "alcohol/fermented" = "#b09733", "papery/musty" = "#9db2b7",
+  "chemical" = "#76c0cb", "burnt" = "#be8663", "cereal" = "#ddaf61", 
+  "brown spice" = "#b14d57", "nutty" = "#c78869", "cocoa" = "#bb7449",
+  "brown sugar" = "#d35a59", "citric acid" = "#faef07"
+)
+```
+
+### (3.2) Erstellung eines Datasets für einen "Hilfskreis"
+
+Um den Plot als donought chart darzustellen, wird ein Kreis in der selben Farbe wie der Hintergrund des Plots in die Mitte gesetzt. Die Daten dafür werden hiermit erstellt:
+
+```{r}
+white_circle <- data.frame(
+  x = 0,
+  y = sum(flavours_H$Freq)
+)
+```
+
+### (3.3) Erstellen des Plots
+
+```{r}
+#| label: fig-sca
+#| fig-cap: "Häufigkeiten der Kaffeegeschmäcker gruppiert nach dem Flavour Wheel der Specialty Coffee Association"
+#| out-width: 100%
+#| fig-align: center
+#| fig-width: 10
+#| fig-height: 10
+ggplot() +
+  geom_bar(
+    data = flavours_H, mapping = aes(x = 5, y = Freq, fill = Var1), 
+    position = "stack", stat = "identity", width = 1
+    ) +
+  geom_bar(
+    data = mid_group_H,
+    mapping = aes(x = 3.48, y = Freq, fill = mid_group),
+    position = "stack", stat = "identity", width = 2
+    ) +
+  geom_bar(
+    data = inner_group_H,
+    mapping = aes(x = 1, y = Freq, fill = inner_group),
+    position = "stack", stat = "identity", width = 2.9
+    ) +
+  geom_col(
+    data = white_circle,
+    mapping = aes(x = x, y = y),
+    fill = "gray90", width = 0.84
+    ) +
+  scale_fill_manual(values = scale_color_SCA) +
+  geom_text(
+    data=label_data_outer, 
+    aes(x = 5.55, y = Freq_position, label= Var1, angle = angle),
+    color = "black", fontface = "bold",alpha = 0.6, size = 3, 
+    position = position_identity(), hjust = "outward"
+    ) + 
+  geom_text(
+    data = label_data_mid,
+    mapping = aes(x = 4.35, y = Freq_position , label = mid_group, angle = angle), 
+    color = "black", fontface = "bold",alpha = 0.6, size = 3,
+    position = position_identity(),
+    hjust = "inward",check_overlap = T
+    ) +
+  geom_text(
+    data = label_data_inner,
+    mapping = aes(x=2.35, y = Freq_position , label = inner_group, angle = angle),
+    color = "black", fontface = "bold",alpha = 0.6, size = 3,
+    position = position_identity(), hjust = "inward"
+    ) +
+  geom_text_repel(
+    data=label_data_removed,
+    mapping = aes(x=5.5, y= Freq_position , label= Var1),
+    color="black", fontface="bold",alpha=0.6, size=3, min.segment.length = 0,
+    nudge_x = 2, segment.alpha = 0.2
+    ) +
+  coord_polar(theta = "y", direction = -1) + 
+  theme_void() +
+  theme(legend.position = "none",
+        panel.background = element_rect(fill = "gray90", color = "black"),
+        plot.title = element_text(hjust = 0.5, vjust = -6, size = 18,
+                                  color = "black", face = "bold")
+  ) +
+  ggtitle("Häufigkeitsverteilung der Kaffee-Flavour")
+```
+
+Die Erstellung des Plots kann in 6 Schritte aufgeteilt werden:
+
+1.  Zuerst werden die drei Kreise für jedes layer gezeichnet <br> Dies geschieht, indem für jede der drei Gruppen ein Balken mit `geom_bar()` erstellt wird. Dabei wird der entsprechende Datensatz für jede Ebene verwendet. Im Mapping werden `x`, `y` und `fill` festgelegt. `x` definiert die Entfernung vom Plotzentrum. `y` entspricht den Häufigkeiten der Flavours. Mit `fill = Var1` werden die Abschnitte des Balkens für jeden Flavour in seiner individuellen Farbe eingefärbt. Anschließend werden `position`, `stat` und `width` festgelegt. `position = stack` stapelt die Balken für die Häufigkeit der Flavours/gruppen übereinander, anstatt sie nebeneinander anzuordnen. `stat = identity` sorgt dafür, dass für den y-Wert jedes Balkens nicht die standardmäßig von `geom_bar()` erstellte Variable `count` verwendet wird, sondern die in der Häufigkeitstabelle angegebene Häufigkeit. Die Breite des jeweiligen Doughnuts wird durch `width` festgelegt.
+
+2.  Plotten des Hilfskreises: Der Hilfskreis wird mittels geom_col eingefügt. Als Datensatz wird `white_circle` verwendet. Im Mapping werden x und y auf die in `white_circle` gespeicherten Werte festgelegt. Die Farbe des Kreises wird mit `fill = "gray90"` auf grau festgelegt. Mit `width` wird der Radius des Kreises festgelegt.
+
+3.  Hinzufügen der labels: Für jedes der drei layer werden die label über `geom_text()` hinzugefügt. Dabei wird der entsprechende Datensatz für jede Ebene verwendet. Im Mapping werden `x`, `y`, `label`, `hjust` und `angle` festgelegt. `x` gibt den Radius des Kreises an, an dem der Text platziert wird. `y` wird auf die Spalte `Freq_position` festgelegt, welche die y-Positionswerte für die Wörter enthält. `label` wird auf die jeweilige Spalte des Datensatzes festgelegt, welche die Namen der Flavour bzw. der Übergruppen enthält. Mit `angle = angle` werden die label auf den in der Spalte `angle` gespeicherten Winkel gedreht. Anschließend wird der Text mit den Argumenten `color = "black"`, `fontface = "bold"`, `alpha = 0.6`,`size = 3` formatiert. Für das inner und das mid layer wird `hjust` auf `"inward"` gesetzt, wodurch der Text nach innen gerichtet wird. Für das outer layer wird `hjust` auf `"outward"` gesetzt, wodurch der Text nach außen gerichtet ist. Innerhalb des mid layer werden mit `check_overlap = T` alle label entfernt, welche sich überschneiden. <br> Die sich überschneidenden label des outer layer werden anschließend mit dem aus dem Paket `ggrepel` stammenden geom `geom_text_repel()` geplottet. Die meisten Argumente von `geom_text_repel()` stimmen mit den oben beschriebenen von `geom_text()` überein. Auf diese wird daher nicht nochmal genauer eingegangen. Neue in `geom_text_repel()` verwendete Argumente sind `min.segment.length`, `nudge_x` und `segment_alpha`. `min.segment.length` steuert die Mindestlänge der Segmente, die die Beschriftungen mit den Datenpunkten verbinden. Wenn der Abstand zwischen einer Beschriftung und einem Datenpunkt kleiner ist als min.segment.length, wird keine Verbindungslinie gezeichnet. Durch `min.segment.length = 0` wird sichergestellt, dass immer Verbindungslinien gezeichnet werden. Mit `nudge_x = 2` werden die Worte nochmals um 2 Einheiten mehr auf der x Achse nach außen verschoben als bereits unter x im Mapping angegeben. Dies verhindert, dass sich die Worte mit bereits bestehenden labeln überschneiden. Mit `segment_alpha = 0.2` wird die Transparenz der Verbindungslinien erhöht.
+
+4.  Einfügen der erstellten Farbskala über `scale_fill_manual()`: Unter dem Argument `values` wird die oben erstellte Farbskala übergeben.
+
+5.  Verwendung eines polaren Koordinatensystems mittels `coord_polar()`: Über `theta = "y"` wird erreicht, dass die Balkenlänge des Balkendiagramms verwendet wird, um die Winkel im Kreisdiagramm zu berechnen. Durch Setzen des Argumentes `direction` auf `-1` wird der pie chart im Uhrzeigersinn geplottet.
+
+6.  Über `theme_void()` wird ein blankes Theme erzeugt. Darauf aufbauend werden anschließend mit `theme()` manuell gewünschte Anpassungen hinzugefügt. In `theme()` wird über `legend.position = "none"` die Legende entfernt und mit `panel.background = element_rect(fill = "gray90", color = "black")` ein grauer Hintergrund mit schwarzem Rand hinzugefügt. Zuguterletzt wird dem Plot mit `ggtitle("Häufigkeitsverteilung der Kaffee-Flavour")` ein Titel gegeben. Dieser wird in `theme()` über `plot.title = element_text(hjust = 0.5, vjust = -6, size = 18, color = "black", face = "bold")` formatiert.
+
+# Erklärung des Codes für den Karten-Plot der Herkunftsländer des Kaffees
+
+## (1.0) Aufbereitung der Daten
+
+### (1.1) Laden der Pakete und Einlesen der Kaffee- und Weltkartendaten
+
+Zuerst werden die benötigten Pakete geladen. Anschließend werden die Daten eingelesen und in der Variable `coffee` gespeichert. Außerdem werden die sf Kartendaten aller Länder der Welt mit `rnaturalearth::ne_countries` eingelesen und in `world` gespeichert. Das Argument `scale` gibt dabei die Genauigkeit an. Die Daten aus `world` werden später verwendet, um die Weltkarte zu zeichnen. sf (kurz für simple form) ist eine Art Kartendaten zu speichern um sie später zu plotten.
+
+```{r message = FALSE, warning = FALSE}
+require("rnaturalearth") # für ne_countries
+require("tidyverse")
+require("rnaturalearthdata")
+require("sf")
+coffee <- read_csv("./Daten/simplified_coffee.csv")
+world <- ne_countries(scale = 110, returnclass = "sf")
+```
+
+### (1.2) Erstellen der sf-Datensätze für die Herkunftsländer des Kaffees
+
+Alle Herkunftsländer des Kaffees werden im Vektor `Herkunftsländer` gespeichert. Welche Länder das sind, kann über `unique(coffee$origin)` überprüft werden. Die Namen der Länder in `Herkunftsländer` müssen sich mit den Namen der Spalte `name_long` aus `world` decken, da diese im nächsten Schritt verwendet wird, um aus `world` nur die Kartendaten für die Länder zu filtern aus denen auch Kaffee kommt. Daher wird "Democratic Republic of the Congo" umbenannt zu "Republic of the Congo". Außerdem kann Hawaii nicht in `world` gefunden werden, da es kein Land ist sondern ein Bundesstaat der USA. Hawaii wird daher aus `Herkunftsländer` entfernt.
+
+```{r message = FALSE, warning = FALSE}
+Herkunftsländer <- unique(coffee$origin)
+Herkunftsländer = Herkunftsländer[-which(Herkunftsländer == "Hawai'I")] 
+Herkunftsländer[grep("Democratic Republic Of The Congo", Herkunftsländer)] =
+  "Republic of the Congo"
+```
+
+Aus den sf-Daten in `world` werden nur diejenigen Länder ausgewählt aus welchen Kaffees kommen:
+
+```{r}
+Herkunftsländer_sf <- world[world$name_long %in% Herkunftsländer, ]
+```
+
+Hawaii ist wie oben beschrieben kein Land, sondern ein Bundesstaat der USA. Um die sf-Daten für Hawaii dennoch zu erhalten, werden die sf-Daten für alle Bundesstaaten der USA mit `ne_states()` geladen und in `bundesstaaten` gespeichert. Von diesen Daten werden anschließend nur diejenigen von Hawaii ausgewählt. Diese werden dann unter `hawaii_sf` gespeichert:
+
+```{r}
+bundesstaaten <- ne_states(country = "United States of America", returnclass = "sf")
+
+hawaii_sf <- bundesstaaten[bundesstaaten$name == "Hawaii", ]
+```
+
+### (1.3) Mittelpunkte der Länder
+
+Ziel des Plots ist es, die Herkunftsländer des Kaffees auf der Weltkarte als Punkte einzutragen. Diese Punkte sollen sich jeweils im Mittelpunkt des Landes befinden, aus dem ein Kaffee kommt. Daher werden die Mittelpunkte der Herkunftsländer über `st_centroid()` bestimmt. Das Ergebnis wird in `mittelpunkte` sowie `mittelpunkt_hawaii` für Hawaii gespeichert. `mittelpunkte` sowie `mittelpunkte_hawaii` enthält 3 Spalten. Die `name` Spalte enthält den Name des Landes. `lon` enthält den Längengrad des Mittelpunktes des Landes; `lat` den Längengrad.
+
+```{r message = FALSE, warning = FALSE}
+mittelpunkte <- data.frame(
+  name = Herkunftsländer_sf$name,
+  lon = st_coordinates(st_centroid(Herkunftsländer_sf))[ ,1],
+  lat = st_coordinates(st_centroid(Herkunftsländer_sf))[ ,2]
+)
+
+mittelpunkt_hawaii <- data.frame(
+  name = "Hawaii",
+  lon = st_coordinates(st_centroid(hawaii_sf))[ ,1],
+  lat = st_coordinates(st_centroid(hawaii_sf))[ ,2]
+)
+```
+
+Anschließend werden die Daten in `mittelpunkt_hawaii` mit `rbind()` an `mittelpunkte` angefügt:
+
+```{r}
+mittelpunkte <- rbind(mittelpunkte, mittelpunkt_hawaii)
+```
+
+### 1.4 Erstellen einer absoluten Häufigkeitstabelle für die Anzahl der Kaffees pro Land
+
+Der Radius der Punkte auf der Karte soll an die Anzahl der Kaffees aus einem Land angepasst werden. Dafür wird eine Häufigkeitstabelle mit der Anzahl der Kaffees pro Land benötigt. Diese wird hiermit erstellt und unter `origin_H` abgespeichert:
+
+```{r}
+origin_H = coffee |> 
+  group_by(origin) |> 
+  summarise(Freq = n())
+```
+
+Zu dieser Tabelle sollen nun `lat`(latitude) und `lon`(longitude) der Mittelpunkte der Länder, welche in `mittelpunkte` gespeichert sind, hinzugefügt werden. Dies geschieht mittels `left_join()`. Als Key Spalten sollen `origin` aus `origin_H` und `name` aus `mittelpunkte` verwendet werden. Vorraussetzung für einen erfolgreichen join ist, dass die Ländernamen in beiden Spalten für ein spezielles Land übereinstimmen. In beiden Datensätzen ist dies für 3 Länder nicht der Fall, weshalb diese Ländernamen angeglichen werden müssen. Hier werden die Ländernamen in `origin_H` an die von `mittelpunkte` angepasst:
+
+```{r}
+origin_H <- origin_H |> 
+  #Democratic Republic Of The Congo -> Congo
+  mutate(origin = ifelse(
+    origin == "Democratic Republic Of The Congo", "Congo", origin
+    )
+    ) |>
+  #Dominican Republic -> Dominican Rep.
+  mutate(origin = ifelse(
+    origin == "Dominican Republic", "Dominican Rep.", origin
+    )
+    ) |> 
+  #Hawai'I -> Hawaii
+  mutate(origin = ifelse(origin == "Hawai'I", "Hawaii", origin))
+```
+
+Anschließend kann der left-join durchgeführt werden, dessen Ergebnisse in origin_H_sf gespeichert werden:
+
+```{r}
+origin_H_sf = origin_H |>  
+  left_join(mittelpunkte, by = join_by(origin == name))
+```
+
+## (2.0) Der Plot
+
+```{r}
+#| label: fig-karte
+#| fig-cap: "Karte mit Herkunftsländern des Kaffees. Die Größe der Punkte gibt die Menge an Kaffee aus dem Land an."
+#| out-width: 110%
+#| fig-align: center
+#| fig-width: 9
+#| fig-height: 4
+ggplot() + 
+  geom_sf(data = world, colour = "grey30", fill = "antiquewhite") + 
+  geom_point(
+    data = origin_H_sf,
+    mapping = aes(x = lon, y = lat, size = Freq), colour = "red"
+    ) + 
+  coord_sf() +
+  labs(
+    x = "Längengrad",
+    y = "Breitengrad",
+    size = "Anzahl der Kaffees",
+    title = "Herkunftsländer des Kaffees"
+    )+
+  scale_x_continuous(expand = c(0, 0), breaks = seq(-180,180, 40)) +
+  scale_y_continuous(expand = c(0, 0), breaks = seq(-90, 90, 20)) +
+  theme_bw() +
+  theme(
+    panel.grid.major = element_line(color = gray(.5),
+                                    linetype = "dashed", linewidth = 0.5),
+    plot.title = element_text(face = "bold", size = 15)
+    )
+```
+
+Die Erstellung des Plots kann in 6 Teilschritte unterteilt werden:
+
+1.  Zuerst wird die Weltkarte mit `geom_sf()` geplottet. Als Daten wird der Datensatz `world` verwendet. Die Ränder der Länder werden in grau über `color = "grey30"` eingezeichnet. Die Farbe der Länder wird über `fill = "antiquewhite"` auf ein cremeweiß festgelegt.
+
+2.  Anschließend werden über `geom_point()` die Punkte für die Herkunftsländer des Kaffees eingezeichnet. Als Daten wird `origin_H_sf` verwendet. Innerhalb des Mapping wird `x` auf Longitude und `y` auf Latitude des Mittelpunktes eines Landes festgesetzt. Der Radius der Punkte wird mittels `size = Freq` an die abs. Häufigkeit von Kaffees aus einem Land angepasst. Dabei ist der Radius bei einer hohen Anzahl größer als bei einer niedrigen Anzahl.
+
+3.  Als Koordinatensystem wird `coord_sf()` verwendet, um die Simple-Feature Daten zu plotten.
+
+4.  Anschließend werden die x und y Achse angepasst. `expand` wird dazu verwendet , um die Skala der Achsen zu erweitern. Das Argument definiert, wie viel zusätzlicher Raum vor und nach den Datenpunkten auf jeder Achse hinzugefügt wird. `expand = c(0, 0)` bedeutet, dass kein zusätzlicher Raum hinzugefügt wird. Das heißt, die Skala wird genau auf die Grenzen der Datenpunkte eingestellt. Über `breaks` wird sowohl für x als auch für y Achse die Achseneinteilung festgelegt.
+
+5.  Nun werden über `labs()` x und y Achsenbeschriftung sowie Titel der Legende und Titel des Plots festgelegt.
+
+6.  Zuguterletzt wird das Theme erstellt. Dieses baut auf `theme_bw()` auf. Innerhalb der `theme()` Funktion wird ein Gitter für Breiten- und Längengrad mithilfe von `panel.grid.major = element_line(color = gray(.5), linetype = "dashed", linewidth = 0.5)` erstellt. Außerdem wird der Titel des Plots mit `plot.title = element_text(face = "bold", size = 15)` formatiert.
+
+# Erklärung des Codes für den RainCloud-Plot zum Vergleich der Kaffeepreise der Top 5 Röststandorte
+
+## (1.0) Aufbereitung der Daten für den Plot
+
+### (1.1) Einlesen der Daten und Laden der Pakete
+
+Zuerst werden die benötigten Pakete geladen. Außerdem werden die Daten aus der Datei simplified_coffee.csv geladen und und in der Variable `coffee` gespeichert:
+
+```{r message = FALSE, warning = FALSE}
+require("tidyverse")
+require("readxl")
+require("ggdist")
+coffee <- read_csv("./Daten/simplified_coffee.csv")
+```
+
+### (1.2) Entfernung der fehlenden Werte
+
+Anschließend werden die Zeilen mit mindestens einem fehlenden Wert entfernt:
+
+```{r}
+coffee <- na.omit(coffee)
+```
+
+### (1.3) Änderung des Namens der Preisspalte
+
+Darüber hinaus wird der Name der Preisspalte zu `price` geändert, um Fehlermeldungen zu vermeiden:
+
+```{r}
+names(coffee)[6] <- "price"
+```
+
+### (1.4) Anpassung von Ländernamen
+
+Zudem werden die Namen von Hawaii und Taiwan im Datensatz für die Röstländer angepasst:
+
+```{r}
+coffee <- coffee |> 
+  mutate(loc_country = ifelse(loc_country == "New Taiwan", "Taiwan", loc_country)) |> 
+  mutate(loc_country = ifelse(loc_country == "Hawai'I", "Hawai'i", loc_country))
+```
+
+### (1.5) Erstellung der Gruppierungen
+
+Ferner werden in der Variable `Top_5_L` die 5 Röststandorte gespeichert, an denen in unserem Datensatz die meisten Kaffees geröstet wurden. Dies geschieht in 5 Schritten:
+
+1.  Der Datensatz coffee wird nach der Spalte `loc_country` gruppiert.
+2.  Die Häufigkeit jedes Landes wird ermittelt.
+3.  Eine absteigende Reihenfolge nach den Häufigkeiten wird erstellt.
+4.  Die ersten fünf Länder in der Spalte `loc_country` werden ausgewählt.
+5.  Das Ergebnis wird mit `pull()` in einen Vektor umgewandelt.
+
+```{r}
+Top_5_L = coffee |>  
+  group_by(loc_country) |> 
+  summarise(n = n()) |> 
+  arrange(desc(n)) |> 
+  select(loc_country) |> 
+  head(5) |> 
+  pull(loc_country)
+```
+
+### (1.6) Definition einer passenden Preisobergrenze
+
+Im Plot wird später eine Verteilungsfunktion der Preise für jeden der Top 5 Röststandorte geplottet. Um Verzerrungen der Verteilungsfunktion zu vermeiden sollen für jedes der Länder Ausreißer entfernt werden. Als Definition für die Ausreißer wird die des Boxplots verwendet. Entsprechend werden alle Preise entfernt die größer als der obere Whisker sind. Dieser wurde für den Preis für jedes der in `Top_5_L` gespeicherten Länder berechnet und in `top_whisker` gespeichert:
+
+```{r}
+top_whisker = coffee |> 
+  filter(loc_country %in% Top_5_L) |> 
+  group_by(loc_country) |> 
+  summarise(top_whisker = quantile(price, 0.75) + 1.5 * IQR(price))
+```
+
+### (1.7) Entfernung der Ausreißer bei den Top 5 Röststandorten
+
+Mithilfe des `top_whisker` Dataframes können anschließend für jedes Land die Ausreißer entfernt werden. Die Ergebnisse für jedes Land werden in separaten Variablen gespeichert:
+
+```{r}
+Guatemala_outlier_rm = coffee |> 
+  filter(loc_country %in% top_whisker$loc_country[1]) |> 
+  filter(price <= top_whisker$top_whisker[1])
+
+Hawaii_outlier_rm = coffee |> 
+  filter(loc_country %in% top_whisker$loc_country[2]) |> 
+  filter(price <= top_whisker$top_whisker[2])
+
+HK_outlier_rm = coffee |> 
+  filter(loc_country %in% top_whisker$loc_country[3]) |> 
+  filter(price <= top_whisker$top_whisker[3])
+
+Taiwan_outlier_rm = coffee |> 
+  filter(loc_country %in% top_whisker$loc_country[4]) |> 
+  filter(price <= top_whisker$top_whisker[4])
+
+US_outlier_rm = coffee |> 
+  filter(loc_country %in% top_whisker$loc_country[5]) |> 
+  filter(price <= top_whisker$top_whisker[5])
+```
+
+Mit `rbind()` werden die einzelnen Datensätze anschließend wieder zusammengefügt und unter dem Namen `coffee_outlier_rm` gespeichert:
+
+```{r}
+coffee_outlier_rm = rbind(
+  Guatemala_outlier_rm, Hawaii_outlier_rm,
+  HK_outlier_rm, Taiwan_outlier_rm, US_outlier_rm
+  )
+```
+
+## (2.0) Der Plot
+
+### (2.1) Definition einer Farbskala
+
+Jedem der Top 5 Röststandorte wird eine Farbe zugeordnet. Diese Zuordnung wird als Vektor in `c_scale` gespeichert:
+
+```{r}
+c_scale <- c("United States" ="#C1B095",
+             "Taiwan" = "#978772",
+             "Hawai'i" = "#5F5043" ,
+             "Hong Kong" = "#7B6C5B",
+             "Guatemala" = "#352720") 
+```
+
+### (2.2) Erstellen des Plots
+
+```{r}
+#| label: fig-RCP
+#| fig-cap: "Vergleich der Kaffeepreise der Top 5 Röststandorte"
+#| out-width: 110%
+#| fig-align: center
+#| fig-width: 7
+#| fig-height: 7
+coffee_outlier_rm |> 
+  ggplot(aes(x = loc_country , y = price, color = loc_country)) +
+  ggdist::stat_halfeye(
+    aes(fill = loc_country),
+    adjust = 0.6,
+    justification = -0.15,
+    scale = 0.7,
+    .width = 0,
+    point_colour = NA) +
+  geom_boxplot(
+    width = 0.1,
+    outlier.color = NA) +
+  ggdist::stat_dots(
+    aes(fill = loc_country),
+    alpha = 0.3,
+    binwidth = 0.3, 
+    scale = 0.5,
+    side = "left",
+    justification = 1.15,
+    position = position_dodge(), 
+    overflow = "compress") +
+  labs(
+    title = "Vergleich der Kaffeepreise der Top 5 Röststandorte",
+    x = "Standort der Rösterei",
+    y = "Preis \n($/100g)", 
+    caption = "Daten von coffeereview.com [11.2017-11.2022]") +
+  coord_flip() + 
+  scale_fill_manual(values = c_scale) +
+  scale_colour_manual(values = c_scale) +
+  scale_y_continuous(breaks = seq(0, 40, 2)) +
+  theme_minimal() + 
+  theme(
+    legend.position = "none",
+    aspect.ratio = 1,
+    plot.background = element_rect(colour = "black", linewidth = 1, fill = "grey90"), 
+    plot.title = element_text(face = "bold", size = 11, hjust = 0.34),
+    axis.title = element_text(face = "bold", size = 8), 
+    axis.title.x = element_text(hjust = 0.43), 
+    plot.caption = element_text(face = "italic", size = 6)) 
+```
+
+Die Erstellung des Plots kann in 9 Schritte unterteilt werden:
+
+1.  Eingeleitet wird der Plot mit der `ggplot()` Funktion. Die Daten werden dem Datensatz `coffee_outlier_rm` entnommen und im Mapping werden `x`, `y` und `color` als globale Ästhetiken definiert. Auf der x-Achse sollen die Röststandorte und auf der y-Achse die Preise für Kaffee an diesen Röststandorten dargestellt werden. Mit `color = loc_country` erhält jedes Land seine eigene vordefinierte Farbe.
+
+2.  Darstellung der Verteilung: Die Verteilung der Preise in jedem Land wird mit `stat_halfeye()` aus dem Paket `ggdist` eingefügt. Innerhalb der Ästhetik wird mit `fill` festgelegt, dass sich die Füllfarbe an `loc_country` orientiert. Mit `adjust` kann die Bandbreite und mit `scale` die Größe eingestellt werden. Zusätzlich wird die Fläche mit `justification` nach rechts geschoben. Schließlich wird das Slub-Intervall mit `.width = 0` und `point_color = NA` entfernt.
+
+3.  Darstellung der statistischen Kennzahlen: Die Boxplots werden mit `geom_boxplot()` eingefügt. Die Breite wird mit `width` eingestellt und Ausreißer werden durch `outlier.color = NA` nicht angezeigt.
+
+4.  Darstellung der einzelnen Beobachtungen: Die Anzahl der Beobachtungen pro Land wird mit `stat_dots()` aus dem Paket `ggdist` abgebildet. Die Füllfarbe orientiert sich durch das Argument `fill = loc_country` wieder an `loc_country`. Die Transparenz kann mit `alpha` verändert werden. Mit `binwidth` kann die Bandbreite und mit `scale` die Größe eingestellt werden. Zusätzlich wird die Fläche mit `side` links vom Boxplot platziert und mit `justification` verschoben. Um Überlappungen zu vermeiden, wird `position` auf `position_dodge()` und `overflow` auf `"compress"` gesetzt.
+
+5.  Hinzufügen der Beschriftungen: Mit `labs()` werden die x- und y-Achsenbeschriftungen sowie Titel und Bilduntertitel des Plots definiert.
+
+6.  Anpassung des Koordinatensystems: Für eine bessere Lesbarkeit werden die Koordinatenachsen mit `coord_flip()` vertauscht.
+
+7.  Einfügen der erzeugten Farbskala: Bei `scale_fill_manual()` und `scale_colour_manual()` kann im Argument `values` die Farbskala `c_scale` übergeben werden.
+
+8.  Anpassung der Ticks der Y-Achse: Über `scale_y_continuous(breaks = seq(0, 40, 2))` wird die Schrittweite der Ticks der y-Achse auf 2 gesetzt.
+
+9.  Anpassung des Theme: Schließlich wird das Theme auf Basis von `theme_minimal()` erstellt. Innerhalb der Funktion `theme()` wird die Legende mit `legend.position = "none"` entfernt, das Seitenverhältnis des Panels mit `aspect.ratio = 1` geändert, der Plot-Hintergrund mit `plot.background()` angepasst und schließlich die Achsenbeschriftungen, Titel und Bilduntertitel formatiert.
+
+# Literaturverzeichnis
+
+Anscombe, F. J. (1973).*Graphs in Statistical Analysis*. The American Statistician, 27(1), 17-21.
+
+Spencer, M., Sage, E., Velez, M., & Guinard, J. X. (2016). *Using single free sorting and multivariate exploratory methods to design a new coffee taster's flavor wheel*. Journal of food science, 81(12), S2997-S3005.
+
+Wickham, H. . (2014). *Tidy Data*. Journal of Statistical Software\*,59(10), 1–23.
+
+Wickham, H., Çetinkaya-Rundel, M., & Grolemund, G. (2023). *R for data science*. " O'Reilly Media, Inc.".
+
+Wickham, H. (2010). *A layered grammar of graphics*. Journal of computational and graphical statistics, 19(1), 3-28.
+
+Wickham H (2016). *ggplot2: Elegant Graphics for Data Analysis*. Springer-Verlag New York
+
+Wilkinson, L. (2012). *The grammar of graphics*(pp. 1-11) Springer Berlin Heidelberg.
