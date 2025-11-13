@@ -1,6 +1,6 @@
 ## Data Visualization und Data Storytelling – Kaffee-Datensatz
 
-Dieses Projekt entstand im Rahmen des Seminars **“Data Visualization & Storytelling” ** an der Universität Augsburg, Augsburg (02/2024 – 05/2024).  
+Dieses Projekt entstand im Rahmen des Seminars **Data Visualization & Storytelling** an der Universität Augsburg, Augsburg (02/2024 – 05/2024).  
 Ziel war die Erstellung von Visualisierungen zu einem **Kaffee-Datensatz** (Quelle: [Kaggle](https://www.kaggle.com/datasets/schmoyote/coffee-reviews-dataset/data)) unter Anwendung von ggplot2.
 
 ---
