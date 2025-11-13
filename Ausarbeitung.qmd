@@ -404,10 +404,14 @@ Die Erstellung des Plots kann in 6 Schritte aufgeteilt werden:
 Zuerst werden die benötigten Pakete geladen. Anschließend werden die Daten eingelesen und in der Variable `coffee` gespeichert. Außerdem werden die sf Kartendaten aller Länder der Welt mit `rnaturalearth::ne_countries` eingelesen und in `world` gespeichert. Das Argument `scale` gibt dabei die Genauigkeit an. Die Daten aus `world` werden später verwendet, um die Weltkarte zu zeichnen. sf (kurz für simple form) ist eine Art Kartendaten zu speichern um sie später zu plotten.
 
 ```{r message = FALSE, warning = FALSE}
+if (!requireNamespace("remotes", quietly = TRUE))
+  install.packages("remotes")
+remotes::install_github("ropensci/rnaturalearthhires")
 require("rnaturalearth") # für ne_countries
 require("tidyverse")
 require("rnaturalearthdata")
 require("sf")
+
 coffee <- read_csv("./Daten/simplified_coffee.csv")
 world <- ne_countries(scale = 110, returnclass = "sf")
 ```
